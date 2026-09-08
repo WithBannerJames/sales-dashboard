@@ -58,7 +58,7 @@ export default async function handler(req, res) {
   const commitments = []
 
   for (const call of calls) {
-    if (call.call_category === 'cs') continue // CS calls don't drive rep tasks
+    if (call.call_category === 'cs' || call.call_category === 'internal') continue // CS + internal calls don't drive rep tasks
     const a = call.analysis || {}
     const callDate = call.call_date?.split('T')[0]
     const callTitle = call.title || 'Untitled call'

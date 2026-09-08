@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       .select('account_id, call_date, analysis')
       .not('analyzed_at', 'is', null)
       .not('ignored', 'is', true)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .not('analysis->competitor_mentions', 'is', null),
     db.from('accounts').select('id, name, stage, debrief'),
   ]);

@@ -40,6 +40,7 @@ export default async function handler(req, res) {
       .is('analyzed_at', null)
       .eq('ignored', false)
       .not('gong_call_id', 'is', null)
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .in('account_id', priorityAccountIds)
       .order('call_date', { ascending: false })
       .limit(BATCH)
@@ -55,6 +56,7 @@ export default async function handler(req, res) {
       .is('analyzed_at', null)
       .eq('ignored', false)
       .not('gong_call_id', 'is', null)
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .order('call_date', { ascending: false })
       .limit(BATCH * 3) // over-fetch so we can dedupe
     const fill = (general || []).filter(c => !exclude.has(c.gong_call_id)).slice(0, BATCH - backlog.length)
@@ -70,6 +72,7 @@ export default async function handler(req, res) {
       .select('id', { count: 'exact', head: true })
       .is('analyzed_at', null)
       .eq('ignored', false)
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
     return res.status(200).json({ processed: 0, remaining: count || 0, message: 'Nothing to process' })
   }
 
@@ -121,6 +124,7 @@ export default async function handler(req, res) {
     .select('id', { count: 'exact', head: true })
     .is('analyzed_at', null)
     .eq('ignored', false)
+    .or('call_category.is.null,call_category.not.in.(cs,internal)')
 
   console.log(`[process-backlog] done: ${processed} analyzed, ${failed} failed, ${remaining || 0} remaining`)
   return res.status(200).json({ processed, failed, remaining: remaining || 0 })

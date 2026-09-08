@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const since = new Date(Date.now() - 180 * 86400000).toISOString();
   const { data } = await db.from('gong_call_analyses')
     .select('analysis, rep_name, call_date')
-    .gte('call_date', since).or('call_category.is.null,call_category.neq.cs').not('analyzed_at', 'is', null)
+    .gte('call_date', since).or('call_category.is.null,call_category.not.in.(cs,internal)').not('analyzed_at', 'is', null)
     .limit(1500);
 
   const map = {};

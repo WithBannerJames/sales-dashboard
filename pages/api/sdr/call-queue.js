@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     db.from('accounts').select('id, name, stage, tier, owner_name, vertical, deal_value, user_id').limit(5000),
     db.from('gong_call_analyses').select('account_id, call_date, analysis')
       .not('account_id', 'is', null).eq('ignored', false).not('analyzed_at', 'is', null)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .order('call_date', { ascending: false }).limit(3000),
   ]);
   if ((callsRes.data || []).length === 3000) console.warn('[sdr/call-queue] gong_call_analyses hit the 3000-row cap — some accounts may show a stale/absent last-contact date.');

@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     .gte('call_date', lookback)
     .not('analyzed_at', 'is', null)
     .not('ignored', 'is', true)
-    .or('call_category.is.null,call_category.neq.cs')
+    .or('call_category.is.null,call_category.not.in.(cs,internal)')
     .ilike('rep_name', `%${repName.split(' ')[0]}%`)
     .order('call_date', { ascending: true });
 

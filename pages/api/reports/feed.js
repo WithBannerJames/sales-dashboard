@@ -75,7 +75,7 @@ export default async function handler(req, res) {
       .gte('analyzed_at', since)
       .eq('ignored', false)
       .not('analysis', 'is', null)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .order('analyzed_at', { ascending: false })
       .limit(120);
     const bump = (bag, k) => { if (k && String(k).trim()) { const key = String(k).trim().slice(0, 80); bag[key] = (bag[key] || 0) + 1; } };

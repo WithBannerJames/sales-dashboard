@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const db = getSupabase();
   const soft = (p) => p.then((r) => r, () => ({ data: [] }));
   const [callsRes, stageRes, tasksRes, notesRes, touchRes] = await Promise.all([
-    soft(db.from('gong_call_analyses').select('title, analyzed_at, call_date, analysis, rep_name, call_category').eq('account_id', accountId).not('analyzed_at', 'is', null).or('call_category.is.null,call_category.neq.cs').order('analyzed_at', { ascending: false }).limit(50)),
+    soft(db.from('gong_call_analyses').select('title, analyzed_at, call_date, analysis, rep_name, call_category').eq('account_id', accountId).not('analyzed_at', 'is', null).or('call_category.is.null,call_category.not.in.(cs,internal)').order('analyzed_at', { ascending: false }).limit(50)),
     soft(db.from('account_stage_history').select('from_stage, to_stage, changed_at, changed_by_name').eq('account_id', accountId).order('changed_at', { ascending: false }).limit(50)),
     soft(db.from('tasks').select('title, status, created_at, completed_at').eq('account_id', accountId).order('created_at', { ascending: false }).limit(50)),
     soft(db.from('notes').select('content, created_at').eq('account_id', accountId).order('created_at', { ascending: false }).limit(30)),

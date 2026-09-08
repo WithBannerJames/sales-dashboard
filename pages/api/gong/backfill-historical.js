@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createGongHeaders } from '../../../lib/apiUtils'
+import { deriveDerivedCallType, deriveCallCategory, isInternalCall } from '../../../lib/callCategory'
 
 const GONG_API_BASE = 'https://api.gong.io'
 const BATCH_SIZE = 100
@@ -170,8 +171,16 @@ export default async function handler(req, res) {
     transcriptMap[t.callId] = t.transcript || []
   })
 
-  // 5. Load accounts for matching
-  const { data: accounts } = await db.from('accounts').select('id, name').limit(1000)
+  // 5. Load accounts for matching (paginated — the table is >1,000 rows, so a bare
+  // .limit(1000) would truncate A–Z and silently drop matches for later-alphabet names).
+  let accounts = []
+  const ACCT_PAGE = 1000
+  for (let from = 0; ; from += ACCT_PAGE) {
+    const { data: page } = await db.from('accounts').select('id, name').range(from, from + ACCT_PAGE - 1)
+    if (!page || !page.length) break
+    accounts = accounts.concat(page)
+    if (page.length < ACCT_PAGE) break
+  }
 
   // 6. Process each call
   const newInsertRows = []
@@ -225,18 +234,29 @@ export default async function handler(req, res) {
       }
     }
 
+    // Classify at import time (no LLM — title heuristic + participant affiliation) so the
+    // backlog drain can route which calls get analyzed, and internal team meetings and
+    // no-shows are tagged up front instead of waiting on analysis.
+    const internal = isInternalCall(parties)
+    const derivedType = internal ? 'internal' : deriveDerivedCallType(call.title)
+    const category = internal ? 'internal' : deriveCallCategory(derivedType)
+    const isNoShow = (call.duration || 0) > 0 && (call.duration || 0) < 120
+
     const row = {
       gong_call_id: call.id,
       title: call.title || 'Untitled',
       call_date: call.started || null,
       call_type: getCallType(call.title),
+      derived_call_type: isNoShow ? 'no_show' : derivedType,
+      call_category: category,
       rep_name: user?.name || null,
       rep_email: user?.email || null,
       duration_seconds: call.duration || 0,
       gong_url: call.url || null,
       transcript_text: transcriptText,
       analyzed_at: null,
-      ignored: false,
+      ignored: isNoShow,
+      ignore_reason: isNoShow ? 'no_show' : null,
     }
     if (accountId) {
       row.account_id = accountId

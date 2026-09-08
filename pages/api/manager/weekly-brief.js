@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       .select('gong_call_id, analysis, analyzed_at, account_id, rep_name, title, call_category')
       .gte('analyzed_at', sevenDaysAgo)
       .not('analysis', 'is', null)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .limit(200),
     db.from('tasks')
       .select('id, title, status, priority, due_date, owner_id, account_id, completed_at, source_type')

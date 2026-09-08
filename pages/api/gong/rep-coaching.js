@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       .ilike('rep_name', `%${repName.split(' ')[0]}%`)
       .gte('analyzed_at', since)
       .not('analysis', 'is', null)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .order('analyzed_at', { ascending: false })
       .limit(50),
     db.from('gong_call_analyses')
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       .gte('analyzed_at', prevSince)
       .lt('analyzed_at', since)
       .not('analysis', 'is', null)
-      .or('call_category.is.null,call_category.neq.cs')
+      .or('call_category.is.null,call_category.not.in.(cs,internal)')
       .limit(50),
     getSalesProcessConfig(),
   ]);

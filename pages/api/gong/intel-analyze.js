@@ -13,6 +13,7 @@ import {
 import { createServerSupabaseClient, getSupabase } from '../../../lib/supabase';
 import { getSalesProcessConfig, buildSalesProcessContext } from '../../../lib/salesProcess';
 import { bestAccountForTitle } from '../../../lib/accountMatch';
+import { deriveDerivedCallType, deriveCallCategory } from '../../../lib/callCategory';
 import { sendSlackMessage } from '../../../lib/slack';
 import { sendCallCoachingDM } from '../../../lib/coaching';
 import { isAutoProcessRep, isCoachRep, COACH_REPS } from '../../../lib/repConfig';
@@ -27,24 +28,6 @@ const STAGE_PRIORITY = {
   inactive_ae_follow_up: 3, inactive_sdr_follow_up: 3,
   closed_lost: 1, closed_won: 0,
 };
-
-function deriveDerivedCallType(title) {
-  if (!title) return 'unknown';
-  const t = title.toLowerCase();
-  if (/\bimplementation\b|\bonboarding\b|\bgo.?live\b/.test(t)) return 'implementation';
-  if (/\btraining\b/.test(t)) return 'training';
-  if (/\bintro\b|\bintroduction\b/.test(t)) return 'intro';
-  if (/\bdemo\b/.test(t)) return 'demo';
-  if (/\bqbr\b|\bbusiness review\b|\bcustomer success\b|\boffice hours\b|\bweekly\b|\bbiweekly\b|\bmonthly\b|\bquarterly\b|\bcadence\b|\bcheck.?in\b|\bsync\b/.test(t)) return 'customer_success';
-  if (/\bpilot\b|\bpoc\b|\bevaluation\b|\bdiscovery\b|\bscoping\b|\bpricing\b|\bproposal\b|\blegal\b|\bcontract\b|\bmsa\b/.test(t)) return 'solution_validation';
-  return 'other';
-}
-
-function deriveCallCategory(derivedType) {
-  if (['implementation', 'training', 'customer_success'].includes(derivedType)) return 'cs';
-  if (['intro', 'demo', 'solution_validation', 'other'].includes(derivedType)) return 'sales';
-  return 'unknown';
-}
 
 function extractCompanyFromTitle(title) {
   if (!title) return null;

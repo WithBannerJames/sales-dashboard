@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   let q = db.from('gong_call_analyses')
     .select('gong_call_id, title, rep_name, call_date, analysis, account_id, gong_url')
     .gte('call_date', since).eq('ignored', false).not('analyzed_at', 'is', null)
-    .or('call_category.is.null,call_category.neq.cs').limit(1200);
+    .or('call_category.is.null,call_category.not.in.(cs,internal)').limit(1200);
   if (rep) q = q.ilike('rep_name', `%${rep}%`);
   const { data } = await q;
 

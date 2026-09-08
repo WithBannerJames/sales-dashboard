@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const rep = req.query.rep || null;
   const since = new Date(Date.now() - 90 * 86400000).toISOString();
   let q = db.from('gong_call_analyses').select('gong_call_id, title, rep_name, account_id, analysis, call_date')
-    .gte('call_date', since).or('call_category.is.null,call_category.neq.cs').not('analyzed_at', 'is', null).limit(800);
+    .gte('call_date', since).or('call_category.is.null,call_category.not.in.(cs,internal)').not('analyzed_at', 'is', null).limit(800);
   if (rep) q = q.ilike('rep_name', `%${rep}%`);
   const { data } = await q;
   const calls = data || [];

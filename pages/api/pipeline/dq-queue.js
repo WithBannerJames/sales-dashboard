@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const db = getSupabase();
   const [acctRes, callsRes] = await Promise.all([
     db.from('accounts').select('id, name, stage, owner_name, deal_value').limit(2000),
-    db.from('gong_call_analyses').select('account_id, analysis, call_date').or('call_category.is.null,call_category.neq.cs').not('analyzed_at', 'is', null).order('call_date', { ascending: false }).limit(4000),
+    db.from('gong_call_analyses').select('account_id, analysis, call_date').or('call_category.is.null,call_category.not.in.(cs,internal)').not('analyzed_at', 'is', null).order('call_date', { ascending: false }).limit(4000),
   ]);
   const ACTIVE = new Set(ACTIVE_STAGE_ORDER);
   const latest = {};
