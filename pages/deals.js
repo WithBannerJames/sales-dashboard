@@ -25,6 +25,11 @@ const STAGE_STYLE = {
 
 const label = (stage) => STAGE_PROCESS[stage]?.label || (stage || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+// Default list order: closest to close first, following Banner's process. Dead and closed
+// stages sink below everything live when they're shown at all.
+const STAGE_RANK = { legal: 1, proposal: 2, solution_validation: 3, qualifying: 4, active_pursuit: 5, demo: 6 };
+const rankOf = (stage) => STAGE_RANK[stage] ?? 90;
+
 function StageChip({ stage, className = '' }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${STAGE_STYLE[stage] || 'bg-slate-100 text-slate-600 ring-slate-200'} ${className}`}>
@@ -88,14 +93,24 @@ export default function Deals() {
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return list.filter((d) => {
-      if (!showDead && !stage && hiddenStages.includes(d.stage)) return false;
-      if (stage && d.stage !== stage) return false;
-      if (owner === '__unassigned' ? !!d.owner : owner && d.owner !== owner) return false;
-      if (quarter && d.closeQuarter !== quarter) return false;
-      if (needle && !(d.name || '').toLowerCase().includes(needle)) return false;
-      return true;
-    });
+    return list
+      .filter((d) => {
+        if (!showDead && !stage && hiddenStages.includes(d.stage)) return false;
+        if (stage && d.stage !== stage) return false;
+        if (owner === '__unassigned' ? !!d.owner : owner && d.owner !== owner) return false;
+        if (quarter && d.closeQuarter !== quarter) return false;
+        if (needle && !(d.name || '').toLowerCase().includes(needle)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const byStage = rankOf(a.stage) - rankOf(b.stage);
+        if (byStage) return byStage;
+        // Within a stage, most recent activity first; deals with no calls last.
+        if (a.lastCallDate && b.lastCallDate) return new Date(b.lastCallDate) - new Date(a.lastCallDate);
+        if (a.lastCallDate) return -1;
+        if (b.lastCallDate) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
   }, [list, q, owner, stage, quarter, showDead, hiddenStages]);
 
   function openDeal(id) {
