@@ -30,9 +30,30 @@ Only **~184 of 4,125** analysed calls carry a `meddicc` object at all (most pred
 - `sync-deals` owner names came from a hardcoded 6-person map, leaving **344 accounts with no owner**; now read live from HubSpot's owners API.
 - Unmapped HubSpot stage ids fall back to `qualifying`, which is why our qualifying (63) far exceeds the HubSpot board (23).
 
-### Known blockers
-1. **Vercel Git is disconnected** — the repo transfer to `WithBannerJames` broke auto-deploy; last real deployment is `20ce638` (Aug 11). Nothing ships until it's reconnected.
-2. **Local `SUPABASE_SERVICE_ROLE_KEY` is invalid** (rotated in the migration) → every `/api/simple/*` route returns `Invalid API key` locally. Vercel's copy is fine. Also blocks the Supabase CLI, which is why deal analysis is stored on `accounts.meddicc._meta` instead of its own table.
+### Deploying (Vercel Git is still disconnected)
+The repo transfer to `WithBannerJames` broke the GitHub→Vercel link, so **pushing does NOT deploy**. Deploy from the CLI instead — James ran `vercel login` on this machine (2026-09-15), so:
+
+```
+cd sales-dashboard && npx vercel --prod --yes
+```
+
+Reconnecting Git (Settings → Git → grant the Vercel GitHub App access to the `WithBannerJames` org) would restore auto-deploy but needs a browser OAuth grant. Not required.
+
+### Supabase keys — resolved, and worth understanding
+There is **one org (Banner Technologies) and one project (`uindoixihckxovyzxfmk`)**. There was never a second project; what moved was the account/org. The confusion was key formats:
+- The **legacy `service_role` JWT** (`eyJ…`) was never rotated and is what **Vercel** uses — which is why the deployed app and every cron kept working throughout.
+- The newer **`sb_secret_`** key *was* rotated, and the stale one sat in local `.env.local`, causing `Invalid API key` on every local `/api/simple/*` call.
+
+Both are now correct. A 90-day org-scoped PAT is in `.env.local` as `SUPABASE_ACCESS_TOKEN` (expires ~2026-12-14), so the CLI and migrations work again — meaning the deal analysis could be moved off `accounts.meddicc._meta` into a real table. Current keys can always be re-fetched:
+```
+curl -s "https://api.supabase.com/v1/projects/uindoixihckxovyzxfmk/api-keys?reveal=true" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+```
+
+### Live as of 2026-09-15
+Deployed and verified: `/deals` serves with no login, `/modules/*` 307s to `/deals`, the roadmap gate rejects a wrong password, and the live API returns 1,293 companies / 142 live deals. Corpus is 4,443 calls (4,442 with transcripts) and still ingesting.
+
+**Open:** only 9 of 142 live deals have MEDDPICC extracted. The nightly `analyze-stale` does 6/night, so a one-off bulk run (~126 deals, ~$15-20 of Sonnet) is needed to make the page useful immediately.
 
 ---
 
