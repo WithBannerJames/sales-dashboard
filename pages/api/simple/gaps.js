@@ -293,11 +293,18 @@ ${buildContext(withText)}`;
     }));
 
     // Persist: values fill blanks only; the rich read goes under _meta.
+    // The analysis is authoritative, not fill-blanks-only. It used to only fill empty keys, so
+    // when the scoring rules tightened, run 1's inflated values survived and kept the deal list
+    // showing 8/8 while this endpoint said 3/8. Nothing writes these keys by hand — there is no
+    // manual edit path — so the current analysis always wins, and an element that is no longer
+    // met is cleared rather than left behind.
     const current = deal.meddicc || {};
     const merged = { ...current };
     let wrote = 0;
     for (const e of elements) {
-      if (e.captured && !readValue(current[e.id])) { merged[e.id] = e.value; wrote++; }
+      const next = e.captured ? e.value : null;
+      if (readValue(current[e.id]) !== next) wrote++;
+      merged[e.id] = next;
     }
     merged._meta = {
       analyzedAt,

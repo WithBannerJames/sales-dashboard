@@ -8,7 +8,18 @@
 // rows, which is why the browser must never query it directly.
 
 import { getSupabase } from '../../../lib/supabase';
-import { MEDDPICC_KEYS, readValue } from '../../../lib/meddpicc';
+import { MEDDPICC_KEYS, readValue, ANALYSIS_VERSION } from '../../../lib/meddpicc';
+
+// How many MEDDPICC elements this deal actually has. The stored analysis under `_meta` is the
+// source of truth when it is current — counting the raw keys instead let superseded values from
+// an older, looser scoring run keep inflating the list after the rules tightened.
+function capturedCount(meddicc) {
+  const meta = meddicc?._meta;
+  if (meta && meta.version === ANALYSIS_VERSION && Array.isArray(meta.elements)) {
+    return meta.elements.filter((e) => e.captured).length;
+  }
+  return MEDDPICC_KEYS.filter((k) => readValue((meddicc || {})[k])).length;
+}
 
 const PAGE = 1000; // accounts is >1,000 rows — an unbounded select silently truncates A-Z
 
@@ -121,7 +132,7 @@ export default async function handler(req, res) {
         childDealCount: childCount[c.id] || 0,
         callCount: roll.count,
         lastCallDate: roll.last,
-        meddpiccCaptured: MEDDPICC_KEYS.filter((k) => readValue(m[k])).length,
+        meddpiccCaptured: capturedCount(c.meddicc),
         meddpiccTotal: MEDDPICC_KEYS.length,
       };
     });
