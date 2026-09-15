@@ -35,6 +35,9 @@ const OWNER_USER_MAP = {
   '355982922': '8c969178-4d4e-494f-a8d7-752276fb683c', // James Lindberg
 };
 
+// Fallback overrides only. Owner names are read live from HubSpot (fetchOwnerNames) — this
+// map used to be the ONLY source, so any deal owned by someone not listed here landed with
+// owner_name = null (344 accounts, 2026-09).
 const OWNER_NAMES = {
   '355982922': 'James Lindberg',
   '587669685': 'Logan King',
@@ -43,6 +46,26 @@ const OWNER_NAMES = {
   '40554838':  'Justin Goodkind',
   '75421653':  'Jovan Arsovski',
 };
+
+// HubSpot owner id -> display name, straight from the CRM so new reps need no code change.
+async function fetchOwnerNames(key) {
+  const names = {};
+  let after = null;
+  let pages = 0;
+  do {
+    const url = `${HS_API_BASE}/crm/v3/owners?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    if (!r.ok) break; // non-fatal: fall back to the static map below
+    const d = await r.json().catch(() => ({}));
+    for (const o of (d.results || [])) {
+      const full = [o.firstName, o.lastName].filter(Boolean).join(' ').trim();
+      if (o.id && (full || o.email)) names[String(o.id)] = full || o.email;
+    }
+    after = d.paging?.next?.after || null;
+    pages++;
+  } while (after && pages < 20);
+  return names;
+}
 
 function cleanDealName(raw) {
   return (raw || '').replace(/\s*-\s*New Deal\s*$/i, '').trim()
@@ -122,6 +145,9 @@ export default async function handler(req, res) {
     }
   }
 
+  // Live owner directory, with the static map as an override/fallback.
+  const ownerNames = { ...(await fetchOwnerNames(hsKey)), ...OWNER_NAMES };
+
   const rows = deals.map(deal => {
     const ownerId = deal.properties?.hubspot_owner_id || null;
     const stageId  = deal.properties?.dealstage || null;
@@ -133,7 +159,7 @@ export default async function handler(req, res) {
       hubspot_deal_id:   deal.id,
       hubspot_stage:     stageId,
       hubspot_owner_id:  ownerId,
-      owner_name:        ownerId ? (OWNER_NAMES[ownerId] || null) : null,
+      owner_name:        ownerId ? (ownerNames[ownerId] || null) : null,
       user_id:           ownerId ? (OWNER_USER_MAP[ownerId] || null) : null,
       stage:             stageId ? (STAGE_MAP[stageId] || 'qualifying') : 'qualifying',
       deal_value:        rawAmount ? parseFloat(rawAmount) : null,

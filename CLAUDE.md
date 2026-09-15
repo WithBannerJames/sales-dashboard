@@ -2,7 +2,41 @@
 
 This file is read automatically at the start of every Claude Code session. Keep it up to date as features ship, bugs are fixed, and decisions are made. Do not let it go stale.
 
-> **Full platform audit (2026-06-27): see [`PLATFORM_AUDIT_2026-06-27.md`](PLATFORM_AUDIT_2026-06-27.md).** Scorecard, ranked gaps, verified cleanup, and the sequenced path forward. Read it before planning new work.
+---
+
+## ⚠️ READ FIRST — the 2026-09-15 reset
+
+**The app is now ONE page.** James judged it overbuilt (32 modules, 172 API routes, 18 crons for a team of ~5) and reset it to first principles: an AE opens `/deals`, picks a live deal, and sees every conversation plus what's missing on MEDDPICC and on Banner's stage process. He intends to fully finish each thing before starting the next.
+
+**Most of this file below describes SHELVED features.** Treat it as history unless it concerns the live surface.
+
+- **Live surface:** `pages/deals.js` (the app) and `pages/roadmap.js` (password-gated, `ROADMAP_PASSWORD`, default `Hashbrown86`).
+- **Live API:** `pages/api/simple/{deals,deal,gaps,analyze-stale}.js`. All **no-auth, service-role only** — `accounts` has RLS on, so a browser client reads zero rows. Never query `accounts` from the browser.
+- **Sign-in is off** via `NEXT_PUBLIC_USE_SUPABASE=false`. That one flag makes `_app.js` skip `AuthGuard`, `CommandPalette`, `GlobalAssistant` and `MigrationPrompt` together. No auth file was modified.
+- **All 32 legacy modules still exist** but `/modules/*` redirects to `/deals` (`next.config.js`). To revive one: remove the redirect, restore its nav entry. Catalogued on `/roadmap` under "Previous Features".
+- **Crons trimmed 18 → 5:** kept `sync-hubspot`, `enrich-calls-bulk`, `nightly-intel`, `score-deal-risk`, `sheets/sync-leads`, plus new `simple/analyze-stale`. The 11 Slack senders and `prep-tasks` are paused. **`cleanup-inactive-users` is deliberately gone** — it deleted auth users inactive 6+ months and cascaded to `accounts`/`tasks`; with sign-in off that was a data-destruction timer. Do not restore it without redesigning it.
+
+### MEDDPICC (8 elements, not 7)
+Paper Process was added 2026-09. The **framework** is MEDDPICC; the **JSONB key stays `analysis.meddicc`** for backward compatibility with 4,125 existing analyses — `paper_process` is a field inside it. Definitions, rationale and discovery questions live in `lib/meddpicc.js`; Banner's stage goals + exit criteria in `lib/stageExitCriteria.js` (which replaced an invented 5-7-item-per-stage checklist with James's real one-or-two-item process). Note his process puts **Active Pursuit before Qualification**, inverting `ACTIVE_STAGE_ORDER`.
+
+### Why the gap engine extracts from transcripts
+Only **~184 of 4,125** analysed calls carry a `meddicc` object at all (most predate that extraction), so across the 79 live deals `metrics` was **0/79** and `paper_process` **0/79**. `/api/simple/gaps` therefore reads the stored transcripts and extracts all 8 elements with verbatim evidence, then writes back to `accounts.meddicc` (blanks only — manual/earlier values win) with the full read under the reserved `_meta` key. It re-runs when a deal **enters** a working stage — detected via `account_stage_history`, so an out-and-back-in round trip is caught — or when a new call lands. Only `WORKING_STAGE_IDS` deals are ever analysed.
+
+### Verified data state (2026-09-15, queried live)
+- 1,293 company rows / 528 child deal-rows. Live stages: qualifying 63, active_pursuit 49, solution_validation 15, proposal 12, legal 3. **`demo` is empty** and has no HubSpot stage id. **No `churned` stage** — HubSpot's Churned maps to `closed_lost`.
+- Of 79 companies in Active Pursuit→Legal, **67 have calls once rolled up across child rows; 12 have none.**
+- **628 of 4,125 analysed calls have no `account_id`** — clearly matchable titles, never linked. Run `/api/hubspot/match-calls`.
+- **1,557 Gong calls were never imported** (all of 2023 + early 2024). Code committed in `4fd2b54`, never deployed.
+- `sync-deals` owner names came from a hardcoded 6-person map, leaving **344 accounts with no owner**; now read live from HubSpot's owners API.
+- Unmapped HubSpot stage ids fall back to `qualifying`, which is why our qualifying (63) far exceeds the HubSpot board (23).
+
+### Known blockers
+1. **Vercel Git is disconnected** — the repo transfer to `WithBannerJames` broke auto-deploy; last real deployment is `20ce638` (Aug 11). Nothing ships until it's reconnected.
+2. **Local `SUPABASE_SERVICE_ROLE_KEY` is invalid** (rotated in the migration) → every `/api/simple/*` route returns `Invalid API key` locally. Vercel's copy is fine. Also blocks the Supabase CLI, which is why deal analysis is stored on `accounts.meddicc._meta` instead of its own table.
+
+---
+
+> **Full platform audit (2026-06-27): see [`PLATFORM_AUDIT_2026-06-27.md`](PLATFORM_AUDIT_2026-06-27.md).** Scorecard, ranked gaps, verified cleanup, and the sequenced path forward. Predates the reset — read it as history.
 
 ---
 
