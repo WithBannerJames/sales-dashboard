@@ -71,6 +71,70 @@ function cleanDealName(raw) {
   return (raw || '').replace(/\s*-\s*New Deal\s*$/i, '').trim()
 }
 
+// A deal that stops coming back from HubSpot (deleted, archived, or moved to another pipeline)
+// used to just freeze at its last-known stage forever — 245 accounts were sitting in that state,
+// including a closed MAA deal parked in Proposal for five weeks. Record the departure as an
+// event so "it went dormant on X and came back on Y" is answerable.
+//
+// On first detection we backdate to hubspot_synced_at — the last time HubSpot actually returned
+// the deal — which is far closer to the truth than "now". After that, detection is same-day.
+async function reconcilePipelineMembership(db, seenDealIds, now) {
+  const fromHubspot = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from('accounts')
+      .select('id, name, owner_name, stage, deal_value, hubspot_deal_id, hubspot_synced_at')
+      .not('hubspot_deal_id', 'is', null)
+      .range(from, from + 999);
+    if (error) { console.error('[sync-deals] membership read failed:', error.message); return { left: 0, rejoined: 0 }; }
+    if (!data?.length) break;
+    fromHubspot.push(...data);
+    if (data.length < 1000) break;
+  }
+  if (!fromHubspot.length) return { left: 0, rejoined: 0 };
+
+  // Latest membership event per account — absent means we've always considered it present.
+  const latest = {};
+  const ids = fromHubspot.map((a) => a.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await db
+      .from('account_stage_history')
+      .select('account_id, event_type, changed_at')
+      .in('account_id', ids.slice(i, i + 200))
+      .in('event_type', ['left_pipeline', 'rejoined_pipeline'])
+      .order('changed_at', { ascending: false });
+    for (const r of data || []) if (!latest[r.account_id]) latest[r.account_id] = r.event_type;
+  }
+
+  const rows = [];
+  for (const a of fromHubspot) {
+    const present = seenDealIds.has(String(a.hubspot_deal_id));
+    const wasOut = latest[a.id] === 'left_pipeline';
+    if (!present && !wasOut) {
+      rows.push({
+        account_id: a.id, stage: a.stage, account_name: a.name, owner_name: a.owner_name,
+        from_stage: a.stage, to_stage: a.stage, deal_value_at_change: a.deal_value,
+        event_type: 'left_pipeline', changed_at: a.hubspot_synced_at || now,
+      });
+    } else if (present && wasOut) {
+      rows.push({
+        account_id: a.id, stage: a.stage, account_name: a.name, owner_name: a.owner_name,
+        from_stage: a.stage, to_stage: a.stage, deal_value_at_change: a.deal_value,
+        event_type: 'rejoined_pipeline', changed_at: now,
+      });
+    }
+  }
+
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error } = await db.from('account_stage_history').insert(rows.slice(i, i + 200));
+    if (error) console.error('[sync-deals] membership insert failed:', error.message);
+  }
+  return {
+    left: rows.filter((r) => r.event_type === 'left_pipeline').length,
+    rejoined: rows.filter((r) => r.event_type === 'rejoined_pipeline').length,
+  };
+}
+
 // Fetch every deal in the sales pipeline.
 //
 // Two bugs used to make this silently return a PARTIAL list, which is worse than failing:
@@ -208,15 +272,23 @@ export default async function handler(req, res) {
     }
   }
 
-  // Record the detected stage moves (best-effort, never blocks the sync).
-  for (const ch of stageChanges) {
-    await recordStageChange(db, { ...ch, changedByName: 'HubSpot sync' });
-  }
+  // NOTE: stage moves are NOT written here. The DB trigger trg_record_stage_change
+  // (20260915_stage_history_repair.sql) fires on the upsert above and is the single writer —
+  // writing them here too would double-record every move. `stageChanges` is still computed
+  // above purely to report the count in the response.
+
+  // Record deals that have left or rejoined the pipeline, so "how long was it out?" is answerable.
+  const membership = await reconcilePipelineMembership(db, new Set(deals.map((d) => String(d.id))), now);
 
   // Regroup the company hierarchy so a newly-synced deal for an existing company becomes a CHILD of
   // that company's master instead of a new top-level duplicate (Phase 0.3 dedup prevention). Idempotent.
   await db.rpc('regroup_account_hierarchy').then(() => {}, (e) => console.error('[sync-deals] regroup error:', e?.message));
 
-  console.log(`[hubspot/sync-deals] synced ${synced} accounts (${errors} batch errors, ${stageChanges.length} stage moves recorded)`);
-  return apiSuccess(res, { synced, total: deals.length, errors, stageChanges: stageChanges.length });
+  console.log(`[hubspot/sync-deals] synced ${synced} accounts (${errors} batch errors, ${stageChanges.length} stage moves, ${membership.left} left pipeline, ${membership.rejoined} rejoined)`);
+  return apiSuccess(res, {
+    synced, total: deals.length, errors,
+    stageChanges: stageChanges.length,
+    leftPipeline: membership.left,
+    rejoinedPipeline: membership.rejoined,
+  });
 }
