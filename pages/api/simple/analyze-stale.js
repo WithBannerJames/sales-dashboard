@@ -11,6 +11,7 @@
 
 import { getSupabase } from '../../../lib/supabase';
 import { WORKING_STAGE_IDS } from '../../../lib/constants';
+import { ANALYSIS_VERSION } from '../../../lib/meddpicc';
 
 export const config = { maxDuration: 300 };
 
@@ -96,6 +97,7 @@ export default async function handler(req, res) {
       if (!callCount[d.id]) return false; // nothing to analyse
       const meta = d.meddicc?._meta;
       if (!meta) return true;
+      if (meta.version !== ANALYSIS_VERSION) return true; // judged by older rules
       if (meta.stage !== d.stage) return true;
       if (meta.newestCall !== newestCall[d.id]) return true;
       if (meta.callCount !== callCount[d.id]) return true;

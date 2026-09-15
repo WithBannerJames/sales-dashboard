@@ -388,7 +388,8 @@ function GapPanel({ gaps, loading, onRerun }) {
                     </>
                   ) : (
                     <>
-                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{e.why}</p>
+                      {/* Deal-specific reason it falls short beats the generic rationale. */}
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{e.shortfall || e.why}</p>
                       {!!e.questions?.length && (
                         <p className="mt-1 text-[11px] leading-snug text-slate-600">
                           <span className="text-slate-400">Ask: </span>{e.questions[0]}

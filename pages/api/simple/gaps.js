@@ -26,8 +26,21 @@
 import { getSupabase } from '../../../lib/supabase';
 import { callAnthropic, parseClaudeJson } from '../../../lib/apiUtils';
 import { CLAUDE_MODELS, WORKING_STAGE_IDS } from '../../../lib/constants';
-import { MEDDPICC_ELEMENTS, MEDDPICC_KEYS, readValue } from '../../../lib/meddpicc';
+import { MEDDPICC_ELEMENTS, MEDDPICC_KEYS, readValue, ANALYSIS_VERSION } from '../../../lib/meddpicc';
 import { criteriaForStage, stageDetail } from '../../../lib/stageExitCriteria';
+import { AUTO_PROCESS_REPS, COACH_REPS, EXCLUDED_REPS } from '../../../lib/repConfig';
+
+// Banner's own people. They are the sellers, so they can never satisfy a MEDDPICC element —
+// a real extraction named "Kristin Wanner (Banner rep)" as a customer champion.
+// Multi-token names only: bare first names like "Josh" or "Amber" would match real prospects,
+// the same trap lib/accountWriteback.js already had to fix.
+const INTERNAL_PEOPLE = [...new Set([
+  ...AUTO_PROCESS_REPS.map((r) => r.name),
+  ...COACH_REPS.map((r) => r.name),
+  ...EXCLUDED_REPS,
+  'Mark Murphy',
+  'Kristin Wanner',
+].filter((n) => n && n.includes(' ')))];
 
 export const config = { maxDuration: 300 };
 
@@ -62,6 +75,7 @@ function hydrate(lean = []) {
       ...el,
       captured: !!s?.captured,
       value: s?.value || null,
+      shortfall: s?.shortfall || null,
       evidence: s?.evidence || null,
       sourceCall: s?.sourceCall || null,
     };
@@ -139,6 +153,7 @@ export default async function handler(req, res) {
       meta &&
       meta.newestCall === latest &&
       meta.callCount === withText.length &&
+      meta.version === ANALYSIS_VERSION &&
       meta.stage === deal.stage &&
       (!stageEnteredAt || new Date(meta.analyzedAt) >= new Date(stageEnteredAt));
 
@@ -184,10 +199,13 @@ export default async function handler(req, res) {
     const system = `You audit B2B sales deals for Banner, a CapEx management software company. You read call transcripts and report ONLY what the transcripts actually support.
 
 Rules:
-- If the transcripts do not establish an element, return null for it. Do NOT infer, assume, or pad.
-- Every non-null element MUST include a short verbatim quote from a transcript as evidence, and the exact call title you took it from.
-- Be strict. "They mentioned budget exists" is not an Economic Buyer unless a specific person with budget authority is identified.
+- Every element carries an explicit "met" boolean. Set met=true ONLY if the transcripts positively establish it. If it is absent, partial, or fails the element's STANDARD, set met=false.
+- When met=false, "value" must state in one line what is missing or why it falls short. NEVER describe a shortfall while claiming met=true.
+- When met=true you MUST include a short verbatim quote as evidence and the exact call title it came from.
+- Be strict. "They mentioned budget exists" is not an Economic Buyer unless a specific person with budget authority is named.
 - Where an element carries a STANDARD, hold the claim to that standard exactly. Enthusiasm is not evidence.
+- Banner's own people are the SELLERS, never the customer's champion, economic buyer or stakeholder. Never name any of these as an element: ${INTERNAL_PEOPLE.join(', ')}.
+- Your stage_exit assessment and your elements must agree. If you judge the champion criterion unmet, champion.met must be false.
 - Output JSON only, no preamble.`;
 
     const prompt = `Deal: ${deal.name} — current stage: ${detail?.label || deal.stage}${goalSpec}${guidanceSpec}
@@ -201,7 +219,7 @@ ${criteriaSpec}${killSpec}
 Return exactly this JSON shape:
 {
   "meddpicc": {
-    "<element_id>": { "value": "one or two sentences of what is established", "evidence": "verbatim quote from the transcript", "call": "exact call title" } | null
+    "<element_id>": { "met": true|false, "value": "what is established, or what is missing", "evidence": "verbatim quote (only when met=true)", "call": "exact call title (only when met=true)" }
   },
   "stage_exit": [ { "id": "<criterion_id>", "met": true|false, "note": "one short line citing why" } ],
   "recommendation": { "verdict": "advance" | "progress" | "exit", "reason": "one short line" }
@@ -230,11 +248,29 @@ ${buildContext(withText)}`;
     const elements = MEDDPICC_ELEMENTS.map((el) => {
       const hit = extracted[el.id];
       const value = hit ? readValue(hit.value) : null;
-      if (!value) return { ...el, captured: false, value: null, evidence: null, sourceCall: null };
+      // An element counts only when the model explicitly says it is met. Previously any prose
+      // counted as captured, so "X is a promoter, not a champion" scored as a captured Champion
+      // and inflated every deal's total.
+      const claimed = !!hit && hit.met === true && !!value;
+      // Banner's own people can never satisfy an element — they are the sellers.
+      const namesInternal = value ? INTERNAL_PEOPLE.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(value)) : false;
+      const captured = claimed && !namesInternal;
+      if (!captured) {
+        return {
+          ...el,
+          captured: false,
+          // Keep the model's reasoning — it says what is missing, which is the useful part.
+          value: null,
+          shortfall: value && !namesInternal ? value : null,
+          evidence: null,
+          sourceCall: null,
+        };
+      }
       return {
         ...el,
         captured: true,
         value,
+        shortfall: null,
         evidence: readValue(hit.evidence),
         // Only trust a call attribution that matches a real call on this deal.
         sourceCall: hit.call && knownTitles.has(hit.call) ? hit.call : null,
@@ -253,7 +289,7 @@ ${buildContext(withText)}`;
 
     const analyzedAt = new Date().toISOString();
     const lean = elements.map((e) => ({
-      id: e.id, captured: e.captured, value: e.value, evidence: e.evidence, sourceCall: e.sourceCall,
+      id: e.id, captured: e.captured, value: e.value, shortfall: e.shortfall, evidence: e.evidence, sourceCall: e.sourceCall,
     }));
 
     // Persist: values fill blanks only; the rich read goes under _meta.
@@ -265,6 +301,7 @@ ${buildContext(withText)}`;
     }
     merged._meta = {
       analyzedAt,
+      version: ANALYSIS_VERSION,
       stage: deal.stage,
       newestCall: latest,
       callCount: withText.length,
