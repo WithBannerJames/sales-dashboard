@@ -27,7 +27,7 @@ import { getSupabase } from '../../../lib/supabase';
 import { callAnthropic, parseClaudeJson } from '../../../lib/apiUtils';
 import { CLAUDE_MODELS, WORKING_STAGE_IDS } from '../../../lib/constants';
 import { MEDDPICC_ELEMENTS, MEDDPICC_KEYS, readValue } from '../../../lib/meddpicc';
-import { criteriaForStage } from '../../../lib/stageExitCriteria';
+import { criteriaForStage, stageDetail } from '../../../lib/stageExitCriteria';
 
 export const config = { maxDuration: 300 };
 
@@ -154,6 +154,8 @@ export default async function handler(req, res) {
           const a = (meta.stageExit || []).find((x) => x.id === c.id);
           return { ...c, met: !!a?.met, note: a?.note || null };
         }),
+        recommendation: meta.recommendation || null,
+        stage: stageDetail(deal.stage),
         basedOn: { calls: meta.callCount, newestCall: meta.newestCall },
         generatedAt: meta.analyzedAt,
       });
@@ -163,10 +165,21 @@ export default async function handler(req, res) {
     if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
 
     const criteria = criteriaForStage(deal.stage);
-    const elementSpec = MEDDPICC_ELEMENTS.map((e) => `  "${e.id}": ${e.label} — ${e.description}`).join('\n');
+    const detail = stageDetail(deal.stage);
+
+    // Elements carry Banner's own definitions; `bar` (currently Champion) is the explicit
+    // standard the model must hold a claim to.
+    const elementSpec = MEDDPICC_ELEMENTS
+      .map((e) => `  "${e.id}": ${e.label} — ${e.description}${e.bar ? `\n      STANDARD: ${e.bar}` : ''}`)
+      .join('\n');
     const criteriaSpec = criteria.length
       ? criteria.map((c) => `  "${c.id}": ${c.label}`).join('\n')
       : '  (no criteria defined for this stage)';
+    const killSpec = detail?.killWhen?.length
+      ? `\nThis deal should be CLOSED OUT when any of these is true:\n${detail.killWhen.map((k) => `  - ${k}`).join('\n')}`
+      : '';
+    const goalSpec = detail?.goal ? `\nGoal of this stage: ${detail.goal}` : '';
+    const guidanceSpec = detail?.guidance ? `\nJudging guidance: ${detail.guidance}` : '';
 
     const system = `You audit B2B sales deals for Banner, a CapEx management software company. You read call transcripts and report ONLY what the transcripts actually support.
 
@@ -174,23 +187,27 @@ Rules:
 - If the transcripts do not establish an element, return null for it. Do NOT infer, assume, or pad.
 - Every non-null element MUST include a short verbatim quote from a transcript as evidence, and the exact call title you took it from.
 - Be strict. "They mentioned budget exists" is not an Economic Buyer unless a specific person with budget authority is identified.
+- Where an element carries a STANDARD, hold the claim to that standard exactly. Enthusiasm is not evidence.
 - Output JSON only, no preamble.`;
 
-    const prompt = `Deal: ${deal.name} — current stage: ${deal.stage}
+    const prompt = `Deal: ${deal.name} — current stage: ${detail?.label || deal.stage}${goalSpec}${guidanceSpec}
 
 Extract the 8 MEDDPICC elements:
 ${elementSpec}
 
-Also assess this stage's exit criteria:
-${criteriaSpec}
+Assess this stage's exit criteria — all must be true for the deal to move forward:
+${criteriaSpec}${killSpec}
 
 Return exactly this JSON shape:
 {
   "meddpicc": {
     "<element_id>": { "value": "one or two sentences of what is established", "evidence": "verbatim quote from the transcript", "call": "exact call title" } | null
   },
-  "stage_exit": [ { "id": "<criterion_id>", "met": true|false, "note": "one short line citing why" } ]
+  "stage_exit": [ { "id": "<criterion_id>", "met": true|false, "note": "one short line citing why" } ],
+  "recommendation": { "verdict": "advance" | "progress" | "exit", "reason": "one short line" }
 }
+
+"advance" only if every exit criterion is met. "exit" if a close-out condition above is true. Otherwise "progress".
 
 TRANSCRIPTS (newest first):
 ${buildContext(withText)}`;
@@ -230,6 +247,10 @@ ${buildContext(withText)}`;
       return { ...c, met: !!a?.met, note: readValue(a?.note) || null };
     });
 
+    const rec = parsed.recommendation && ['advance', 'progress', 'exit'].includes(parsed.recommendation.verdict)
+      ? { verdict: parsed.recommendation.verdict, reason: readValue(parsed.recommendation.reason) || null }
+      : null;
+
     const analyzedAt = new Date().toISOString();
     const lean = elements.map((e) => ({
       id: e.id, captured: e.captured, value: e.value, evidence: e.evidence, sourceCall: e.sourceCall,
@@ -249,6 +270,7 @@ ${buildContext(withText)}`;
       callCount: withText.length,
       elements: lean,
       stageExit: stageExit.map((s) => ({ id: s.id, met: s.met, note: s.note })),
+      recommendation: rec,
     };
     const { error: upErr } = await db.from('accounts').update({ meddicc: merged }).eq('id', deal.id);
     if (upErr) console.error('[simple/gaps] writeback failed', upErr.message);
@@ -261,6 +283,8 @@ ${buildContext(withText)}`;
       capturedCount: elements.filter((e) => e.captured).length,
       total: MEDDPICC_KEYS.length,
       stageExit,
+      recommendation: rec,
+      stage: detail,
       basedOn: { calls: withText.length, newestCall: latest },
       newValuesWritten: wrote,
       generatedAt: analyzedAt,

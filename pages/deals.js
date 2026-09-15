@@ -340,20 +340,48 @@ function GapPanel({ gaps, loading, onRerun }) {
   );
 }
 
+const VERDICT = {
+  advance: { label: 'Advance', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  progress: { label: 'Progress', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
+  exit: { label: 'Exit', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+};
+
 function ProcessPanel({ gaps, loading, stageGoal, fallback }) {
   const items = gaps?.stageExit?.length ? gaps.stageExit : fallback || [];
-  if (!items.length) return null;
+  const stage = gaps?.stage || null;
+  const rec = gaps?.recommendation || null;
+  if (!items.length && !stage?.goals?.length) return null;
   const assessed = !!gaps?.stageExit?.length && gaps?.status === 'ok';
+  const met = items.filter((c) => c.met).length;
+
   return (
     <section className="rounded-lg bg-white ring-1 ring-slate-200">
-      <div className="border-b border-slate-100 px-4 py-3">
-        <h3 className="text-[13px] font-semibold">Sales process</h3>
-        <p className="mt-0.5 text-[11px] text-slate-400">
-          {stageGoal ? `Goal: ${stageGoal}. ` : ''}What has to be true to leave this stage.
-        </p>
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold">Sales process</h3>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {stageGoal ? `Goal: ${stageGoal}. ` : ''}What has to be true to move forward.
+          </p>
+        </div>
+        {assessed && (
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-[11px] tabular-nums text-slate-400">{met}/{items.length}</span>
+            {rec && (
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${VERDICT[rec.verdict]?.cls || 'bg-slate-100 text-slate-600 ring-slate-200'}`}>
+                {VERDICT[rec.verdict]?.label || rec.verdict}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {rec?.reason && !loading && (
+        <p className="border-b border-slate-50 px-4 py-2 text-[11.5px] leading-snug text-slate-600">{rec.reason}</p>
+      )}
+
       {loading && <p className="px-4 py-5 text-xs text-slate-400">Assessing…</p>}
-      {!loading && (
+
+      {!loading && !!items.length && (
         <ul className="divide-y divide-slate-50">
           {items.map((c) => (
             <li key={c.id} className="flex items-start gap-2.5 px-4 py-2.5">
@@ -366,6 +394,17 @@ function ProcessPanel({ gaps, loading, stageGoal, fallback }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {!loading && !!stage?.killWhen?.length && (
+        <div className="border-t border-slate-100 px-4 py-2.5">
+          <p className="text-[10.5px] font-medium uppercase tracking-wide text-slate-400">Close it when</p>
+          <ul className="mt-1 space-y-0.5">
+            {stage.killWhen.map((k, i) => (
+              <li key={i} className="text-[11.5px] leading-snug text-slate-600">{k}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
