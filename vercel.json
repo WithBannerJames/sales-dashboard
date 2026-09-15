@@ -44,6 +44,9 @@
     },
     "pages/api/hubspot/match-calls.js": {
       "maxDuration": 300
+    },
+    "pages/api/simple/resolve-merged.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

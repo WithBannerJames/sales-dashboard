@@ -23,7 +23,30 @@ const STAGE_STYLE = {
   inactive_ae_follow_up: 'bg-slate-100 text-slate-500 ring-slate-200',
 };
 
-const label = (stage) => STAGE_PROCESS[stage]?.label || (stage || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+// Stages outside Banner's live process. Spelled out here because title-casing the raw id
+// mangles the acronyms ("Inactive Sdr Follow Up").
+const OTHER_STAGE_LABELS = {
+  inactive_sdr_follow_up: 'Inactive SDR Follow Up',
+  inactive_ae_follow_up: 'Inactive AE Follow Up',
+  closed_won: 'Closed Won',
+  closed_lost: 'Closed Lost',
+};
+
+const label = (stage) =>
+  STAGE_PROCESS[stage]?.label
+  || OTHER_STAGE_LABELS[stage]
+  || (stage || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Deals are usually named "Company - Scope" (TruAmerica - Capex, MAA Apartments -
+// Redevelopment). The list is company-grained, so lead with the company; the full deal name
+// is kept for the detail pane. Only splits on " - ", so hyphenated company names are safe.
+function companyName(name) {
+  const s = (name || '').trim();
+  const i = s.indexOf(' - ');
+  if (i <= 0) return s;
+  const head = s.slice(0, i).trim();
+  return head.length >= 3 ? head : s;
+}
 
 // Default list order: closest to close first, following Banner's process. Dead and closed
 // stages sink below everything live when they're shown at all.
@@ -211,7 +234,7 @@ export default function Deals() {
                   {staleHidden > 0 && (
                     <label className="flex cursor-pointer items-center gap-2 text-[11px] text-amber-600">
                       <input type="checkbox" checked={showStale} onChange={(e) => setShowStale(e.target.checked)} />
-                      Include {staleHidden} no longer in HubSpot
+                      Include {staleHidden} merged or removed in HubSpot
                     </label>
                   )}
                 </div>
@@ -229,7 +252,7 @@ export default function Deals() {
                   className={`w-full border-b border-slate-50 px-3 py-2.5 text-left hover:bg-slate-50 ${selectedId === d.id ? 'bg-slate-50 ring-1 ring-inset ring-slate-200' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[13px] font-medium leading-tight">{d.name}</span>
+                    <span className="text-[13px] font-medium leading-tight">{companyName(d.name)}</span>
                     <StageChip stage={d.stage} className="shrink-0" />
                   </div>
                   <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -242,7 +265,7 @@ export default function Deals() {
                   </div>
                   {d.syncStale && (
                     <p className="mt-1 text-[10.5px] text-amber-600">
-                      Stage may be out of date — HubSpot stopped returning this deal on {day(d.lastSyncedAt)}
+                      Stage may be out of date. HubSpot stopped returning this deal on {day(d.lastSyncedAt)}, usually because it was merged into another deal.
                     </p>
                   )}
                 </button>
@@ -275,9 +298,12 @@ function DealDetail({ detail, gaps, loadingGaps, onRerun }) {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <section>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-semibold tracking-tight">{deal.name}</h2>
+          <h2 className="text-xl font-semibold tracking-tight">{companyName(deal.name)}</h2>
           <StageChip stage={deal.stage} />
         </div>
+        {companyName(deal.name) !== deal.name && (
+          <p className="mt-0.5 text-[12px] text-slate-500">Deal: {deal.name}</p>
+        )}
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-slate-600">
           <div><dt className="inline text-slate-400">Owner </dt><dd className="inline font-medium">{deal.owner || 'Unassigned'}</dd></div>
           {money(deal.dealValue) && <div><dt className="inline text-slate-400">Value </dt><dd className="inline font-medium tabular-nums">{money(deal.dealValue)}</dd></div>}
