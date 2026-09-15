@@ -72,6 +72,7 @@ export default function Deals() {
   const [stage, setStage] = useState('');
   const [quarter, setQuarter] = useState('');
   const [showDead, setShowDead] = useState(false);
+  const [showStale, setShowStale] = useState(false);
 
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -98,6 +99,9 @@ export default function Deals() {
     return list
       .filter((d) => {
         if (!showDead && !stage && hiddenStages.includes(d.stage)) return false;
+        // HubSpot no longer returns this deal, so its stage is frozen and untrustworthy —
+        // it is not a live deal. Hidden by default, not deleted.
+        if (!showStale && !stage && d.syncStale) return false;
         if (stage && d.stage !== stage) return false;
         if (owner === '__unassigned' ? !!d.owner : owner && d.owner !== owner) return false;
         if (quarter && d.closeQuarter !== quarter) return false;
@@ -113,7 +117,13 @@ export default function Deals() {
         if (b.lastCallDate) return 1;
         return (a.name || '').localeCompare(b.name || '');
       });
-  }, [list, q, owner, stage, quarter, showDead, hiddenStages]);
+  }, [list, q, owner, stage, quarter, showDead, showStale, hiddenStages]);
+
+  // How many live-stage deals are held back purely because HubSpot dropped them.
+  const staleHidden = useMemo(
+    () => list.filter((d) => d.syncStale && !hiddenStages.includes(d.stage)).length,
+    [list, hiddenStages]
+  );
 
   function openDeal(id) {
     setSelectedId(id);
@@ -193,10 +203,18 @@ export default function Deals() {
                 {(filters.quarters || []).map((qq) => <option key={qq} value={qq}>{qq}</option>)}
               </select>
               {!stage && (
-                <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-500">
-                  <input type="checkbox" checked={showDead} onChange={(e) => setShowDead(e.target.checked)} />
-                  Include inactive, closed and churned
-                </label>
+                <div className="space-y-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-500">
+                    <input type="checkbox" checked={showDead} onChange={(e) => setShowDead(e.target.checked)} />
+                    Include inactive, closed and churned
+                  </label>
+                  {staleHidden > 0 && (
+                    <label className="flex cursor-pointer items-center gap-2 text-[11px] text-amber-600">
+                      <input type="checkbox" checked={showStale} onChange={(e) => setShowStale(e.target.checked)} />
+                      Include {staleHidden} no longer in HubSpot
+                    </label>
+                  )}
+                </div>
               )}
             </div>
 
