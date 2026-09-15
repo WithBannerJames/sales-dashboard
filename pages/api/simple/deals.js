@@ -26,7 +26,7 @@ async function fetchAllAccounts(db, applyFilters) {
   for (let from = 0; ; from += PAGE) {
     let q = db
       .from('accounts')
-      .select('id, name, stage, owner_name, deal_value, close_date, parent_account_id, vertical, meddicc')
+      .select('id, name, stage, owner_name, deal_value, close_date, parent_account_id, vertical, meddicc, hubspot_deal_id, hubspot_synced_at')
       .range(from, from + PAGE - 1);
     q = applyFilters ? applyFilters(q) : q;
     const { data, error } = await q;
@@ -93,10 +93,23 @@ export default async function handler(req, res) {
       }
     }
 
+    // When did the HubSpot sync last run? Any deal not refreshed by that run is frozen at its
+    // last-known stage — HubSpot stopped returning it, so its stage can no longer be trusted.
+    const latestSync = all.reduce((max, a) => {
+      const t = a.hubspot_synced_at;
+      return t && (!max || t > max) ? t : max;
+    }, null);
+    const latestSyncDay = (latestSync || '').slice(0, 10);
+
     const deals = companies.map((c) => {
       const roll = byCompany[c.id] || { count: 0, last: null };
       const m = c.meddicc || {};
+      const syncedDay = (c.hubspot_synced_at || '').slice(0, 10);
       return {
+        fromHubspot: !!c.hubspot_deal_id,
+        lastSyncedAt: c.hubspot_synced_at || null,
+        // Only meaningful for HubSpot-sourced deals; rows never in HubSpot aren't "stale".
+        syncStale: !!c.hubspot_deal_id && !!latestSyncDay && syncedDay < latestSyncDay,
         id: c.id,
         name: c.name,
         stage: c.stage,
@@ -125,6 +138,11 @@ export default async function handler(req, res) {
       deals,
       total: deals.length,
       defaultHiddenStages: DEFAULT_HIDDEN_STAGES,
+      sync: {
+        lastRunAt: latestSync,
+        staleCount: deals.filter((d) => d.syncStale).length,
+        notInHubspotCount: deals.filter((d) => !d.fromHubspot).length,
+      },
       filters: {
         owners: uniqSorted(deals.map((d) => d.owner)),
         stages: uniqSorted(deals.map((d) => d.stage)),

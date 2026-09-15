@@ -35,6 +35,15 @@
     },
     "pages/api/simple/analyze-stale.js": {
       "maxDuration": 300
+    },
+    "pages/api/hubspot/sync-deals.js": {
+      "maxDuration": 300
+    },
+    "pages/api/cron/sync-hubspot.js": {
+      "maxDuration": 300
+    },
+    "pages/api/hubspot/match-calls.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

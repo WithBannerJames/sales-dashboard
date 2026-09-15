@@ -71,6 +71,16 @@ function cleanDealName(raw) {
   return (raw || '').replace(/\s*-\s*New Deal\s*$/i, '').trim()
 }
 
+// Fetch every deal in the sales pipeline.
+//
+// Two bugs used to make this silently return a PARTIAL list, which is worse than failing:
+// upserting a subset looks identical to a complete sync, so every deal on a dropped page
+// kept its last-known stage forever. That is how a closed MAA deal sat in Proposal for five
+// weeks, and why 33 of 142 "live" deals were frozen (13 at the same timestamp — one dropped
+// page, not 13 deletions).
+//   1. `if (!r.ok) break` swallowed rate limits and transient 5xx. Now retried, then thrown.
+//   2. No sort on a paginated /search. HubSpot requires a stable sort for reliable paging;
+//      without one records are skipped between pages.
 async function fetchAllDeals(key) {
   const deals = [];
   let after = null;
@@ -81,21 +91,37 @@ async function fetchAllDeals(key) {
       filterGroups: [{
         filters: [{ propertyName: 'pipeline', operator: 'EQ', value: SALES_PIPELINE_ID }],
       }],
+      // Stable pagination — without this, paging over /search can skip records.
+      sorts: [{ propertyName: 'hs_object_id', direction: 'ASCENDING' }],
       properties: ['dealname', 'amount', 'dealstage', 'closedate', 'hubspot_owner_id'],
       limit: 100,
       ...(after ? { after } : {}),
     };
-    const r = await fetch(`${HS_API_BASE}/crm/v3/objects/deals/search`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) break;
-    const d = await r.json().catch(() => ({}));
+
+    let d = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const r = await fetch(`${HS_API_BASE}/crm/v3/objects/deals/search`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) { d = await r.json().catch(() => null); break; }
+      // 429 (search is rate-limited hard) and 5xx are worth retrying; 4xx is not.
+      if (r.status !== 429 && r.status < 500) {
+        const detail = await r.text().catch(() => '');
+        throw new Error(`HubSpot deal search failed: ${r.status} ${detail.slice(0, 200)}`);
+      }
+      await new Promise((res) => setTimeout(res, 500 * 2 ** attempt));
+    }
+    if (!d) throw new Error(`HubSpot deal search failed after retries on page ${pages + 1} — refusing to sync a partial deal list`);
+
     deals.push(...(d.results || []));
     after = d.paging?.next?.after || null;
     pages++;
+    if (after) await new Promise((res) => setTimeout(res, 120)); // stay under the search rate limit
   } while (after && pages < 100);
+
+  if (after) throw new Error(`HubSpot returned more than ${pages} pages — refusing to sync a partial deal list`);
 
   console.log(`[hubspot/sync-deals] fetched ${deals.length} deals across ${pages} pages`);
   return deals;

@@ -63,6 +63,7 @@ export default function Deals() {
   const [list, setList] = useState([]);
   const [hiddenStages, setHiddenStages] = useState([]);
   const [filters, setFilters] = useState({ owners: [], stages: [], quarters: [] });
+  const [sync, setSync] = useState(null);
   const [listErr, setListErr] = useState(null);
   const [loadingList, setLoadingList] = useState(true);
 
@@ -86,6 +87,7 @@ export default function Deals() {
         setList(d.deals || []);
         setHiddenStages(d.defaultHiddenStages || []);
         setFilters(d.filters || { owners: [], stages: [], quarters: [] });
+        setSync(d.sync || null);
       })
       .catch((e) => setListErr(e.message))
       .finally(() => setLoadingList(false));
@@ -220,6 +222,11 @@ export default function Deals() {
                     </span>
                     <Meter n={d.meddpiccCaptured} total={d.meddpiccTotal} />
                   </div>
+                  {d.syncStale && (
+                    <p className="mt-1 text-[10.5px] text-amber-600">
+                      Stage may be out of date — HubSpot stopped returning this deal on {day(d.lastSyncedAt)}
+                    </p>
+                  )}
                 </button>
               ))}
             </div>
