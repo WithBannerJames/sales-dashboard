@@ -102,6 +102,8 @@ export default function Deals() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [gaps, setGaps] = useState(null);
   const [loadingGaps, setLoadingGaps] = useState(false);
+  const [capex, setCapex] = useState(null);
+  const [loadingCapex, setLoadingCapex] = useState(false);
 
   useEffect(() => {
     fetch('/api/simple/deals')
@@ -165,6 +167,25 @@ export default function Deals() {
       .then((d) => setGaps(d))
       .catch((e) => setGaps({ error: e.message }))
       .finally(() => setLoadingGaps(false));
+
+    setCapex(null);
+    setLoadingCapex(true);
+    fetch(`/api/simple/capex?id=${id}`)
+      .then((r) => r.json())
+      .then((d) => setCapex(d))
+      .catch((e) => setCapex({ error: e.message }))
+      .finally(() => setLoadingCapex(false));
+  }
+
+  function rerunCapex() {
+    if (!selectedId) return;
+    setLoadingCapex(true);
+    setCapex(null);
+    fetch(`/api/simple/capex?id=${selectedId}&refresh=1`)
+      .then((r) => r.json())
+      .then((d) => setCapex(d))
+      .catch((e) => setCapex({ error: e.message }))
+      .finally(() => setLoadingCapex(false));
   }
 
   function rerun() {
@@ -283,7 +304,8 @@ export default function Deals() {
             {selectedId && loadingDetail && <p className="p-6 text-xs text-slate-400">Loading deal…</p>}
             {detail?.error && <p className="p-6 text-sm text-rose-600">{detail.error}</p>}
             {detail && !detail.error && (
-              <DealDetail detail={detail} gaps={gaps} loadingGaps={loadingGaps} onRerun={rerun} />
+              <DealDetail detail={detail} gaps={gaps} loadingGaps={loadingGaps} onRerun={rerun}
+                capex={capex} loadingCapex={loadingCapex} onRerunCapex={rerunCapex} />
             )}
           </main>
         </div>
@@ -292,7 +314,7 @@ export default function Deals() {
   );
 }
 
-function DealDetail({ detail, gaps, loadingGaps, onRerun }) {
+function DealDetail({ detail, gaps, loadingGaps, onRerun, capex, loadingCapex, onRerunCapex }) {
   const { deal, children, calls, stageGoal } = detail;
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -332,6 +354,7 @@ function DealDetail({ detail, gaps, loadingGaps, onRerun }) {
       </section>
 
       <GapPanel gaps={gaps} loading={loadingGaps} onRerun={onRerun} />
+      <CapexPanel capex={capex} loading={loadingCapex} onRerun={onRerunCapex} />
       <ProcessPanel gaps={gaps} loading={loadingGaps} stageGoal={stageGoal} fallback={detail.stageExit} />
       <Conversations calls={calls} />
     </div>
@@ -407,6 +430,103 @@ function GapPanel({ gaps, loading, onRerun }) {
   );
 }
 
+const RELEVANCE_STYLE = {
+  high: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  medium: 'bg-amber-50 text-amber-700 ring-amber-200',
+  low: 'bg-slate-100 text-slate-600 ring-slate-200',
+};
+
+// What we understand about how this customer actually runs CapEx, area by area — and, just as
+// importantly, which areas we have never covered. Separate from MEDDPICC, which is about
+// whether the DEAL is qualified.
+function CapexPanel({ capex, loading, onRerun }) {
+  const covered = capex?.covered || [];
+  const notCovered = capex?.notCovered || [];
+  const total = covered.length + notCovered.length;
+
+  return (
+    <section className="rounded-lg bg-white ring-1 ring-slate-200">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold">Their CapEx process</h3>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            How they run it today, and what we still don&apos;t understand.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {capex?.status === 'ok' && total > 0 && (
+            <span className="text-[11px] tabular-nums text-slate-400">{covered.length}/{total} areas covered</span>
+          )}
+          <button onClick={onRerun} disabled={loading} className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            {loading ? 'Reading…' : 'Re-run'}
+          </button>
+        </div>
+      </div>
+
+      {loading && <p className="px-4 py-6 text-xs text-slate-400">Reading the transcripts…</p>}
+      {!loading && capex?.error && <p className="px-4 py-6 text-xs text-rose-600">{capex.error}</p>}
+      {!loading && capex?.status === 'no_transcripts' && (
+        <p className="px-4 py-6 text-xs text-slate-500">{capex.message}</p>
+      )}
+
+      {!loading && capex?.status === 'ok' && (
+        <>
+          {!covered.length && (
+            <p className="px-4 py-6 text-xs text-slate-500">
+              Nothing about their CapEx process has been covered on a call yet.
+            </p>
+          )}
+          <ul className="divide-y divide-slate-50">
+            {covered.map((a) => (
+              <li key={a.id} className="px-4 py-3">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-[12.5px] font-semibold">{a.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ring-inset ${RELEVANCE_STYLE[a.relevance] || RELEVANCE_STYLE.low}`}>
+                    {a.relevance}
+                  </span>
+                  {a.callsCovering ? (
+                    <span className="text-[10.5px] text-slate-400">
+                      {a.callsCovering} call{a.callsCovering === 1 ? '' : 's'}
+                    </span>
+                  ) : null}
+                </div>
+                <dl className="mt-1 space-y-0.5">
+                  {a.currentProcess && (
+                    <div className="text-[11.5px] leading-snug"><dt className="inline text-slate-400">Today: </dt><dd className="inline text-slate-700">{a.currentProcess}</dd></div>
+                  )}
+                  {a.problems && (
+                    <div className="text-[11.5px] leading-snug"><dt className="inline text-slate-400">Problem: </dt><dd className="inline text-slate-700">{a.problems}</dd></div>
+                  )}
+                  {a.bannerDiscussed && (
+                    <div className="text-[11.5px] leading-snug"><dt className="inline text-slate-400">Banner: </dt><dd className="inline text-slate-700">{a.bannerDiscussed}</dd></div>
+                  )}
+                  {a.priority && (
+                    <div className="text-[11.5px] leading-snug"><dt className="inline text-slate-400">Priority: </dt><dd className="inline text-slate-700">{a.priority}</dd></div>
+                  )}
+                </dl>
+                {a.evidence && (
+                  <p className="mt-1.5 border-l-2 border-slate-200 pl-2 text-[11px] italic leading-snug text-slate-500">“{a.evidence}”</p>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {!!notCovered.length && (
+            <div className="border-t border-slate-100 px-4 py-2.5">
+              <p className="text-[10.5px] font-medium uppercase tracking-wide text-slate-400">
+                Never covered on a call ({notCovered.length})
+              </p>
+              <p className="mt-1 text-[11.5px] leading-snug text-slate-600">
+                {notCovered.map((a) => a.label).join(' · ')}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 const VERDICT = {
   advance: { label: 'Advance', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
   progress: { label: 'Progress', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
@@ -425,9 +545,9 @@ function ProcessPanel({ gaps, loading, stageGoal, fallback }) {
     <section className="rounded-lg bg-white ring-1 ring-slate-200">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-[13px] font-semibold">Sales process</h3>
+          <h3 className="text-[13px] font-semibold">Stage gate</h3>
           <p className="mt-0.5 text-[11px] text-slate-400">
-            {stageGoal ? `Goal: ${stageGoal}. ` : ''}What has to be true to move forward.
+            {stageGoal ? `Goal: ${stageGoal}. ` : ''}What has to be true to leave this stage.
           </p>
         </div>
         {assessed && (

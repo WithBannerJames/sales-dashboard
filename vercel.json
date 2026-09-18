@@ -47,6 +47,9 @@
     },
     "pages/api/simple/resolve-merged.js": {
       "maxDuration": 300
+    },
+    "pages/api/simple/capex.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
