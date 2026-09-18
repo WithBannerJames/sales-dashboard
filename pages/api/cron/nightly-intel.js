@@ -144,7 +144,10 @@ export default async function handler(req, res) {
     .filter(c => !existingMap.has(c.id))
     .filter(c => {
       const user = userMap[c.primaryUserId];
-      return !isExcludedRep(user?.name) && !isExcludedRep(user?.email);
+      // CS reps are imported and analysed too (2026-09-18) — their calls carry the customer
+      // knowledge. They are tagged call_category='cs' at analysis, which is what keeps them out
+      // of sales metrics.
+      return true;
     });
   let imported = 0;
 
@@ -190,7 +193,10 @@ export default async function handler(req, res) {
     .filter(call => !doneIds.has(call.id))
     .filter(call => {
       const user = userMap[call.primaryUserId];
-      return !isExcludedRep(user?.name) && !isExcludedRep(user?.email);
+      // CS reps are imported and analysed too (2026-09-18) — their calls carry the customer
+      // knowledge. They are tagged call_category='cs' at analysis, which is what keeps them out
+      // of sales metrics.
+      return true;
     })
     .slice(0, analyzeCap);
 

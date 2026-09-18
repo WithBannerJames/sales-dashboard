@@ -16,7 +16,7 @@ import { bestAccountForTitle } from '../../../lib/accountMatch';
 import { deriveDerivedCallType, deriveCallCategory } from '../../../lib/callCategory';
 import { sendSlackMessage } from '../../../lib/slack';
 import { sendCallCoachingDM } from '../../../lib/coaching';
-import { isAutoProcessRep, isCoachRep, COACH_REPS } from '../../../lib/repConfig';
+import { isAutoProcessRep, isCoachRep, isCsRep, COACH_REPS } from '../../../lib/repConfig';
 import { generateTaskDraft } from '../../../lib/taskActions';
 import { writeBackFromAnalysis, writeAccountSignals } from '../../../lib/accountWriteback';
 
@@ -722,7 +722,12 @@ Count filler words in the rep's speech only (not the customer's). Be accurate â€
         analyzed_at: new Date().toISOString(),
         transcript_text: transcriptText || null,
         derived_call_type: deriveDerivedCallType(title),
-        call_category: deriveCallCategory(deriveDerivedCallType(title)),
+        // A CS rep's call is a CS call whatever the title says â€” tagging from the rep is far
+        // more reliable than the title heuristic, which only catches wording like 'weekly' or
+        // 'training'. This tag is what keeps CS calls out of every sales metric.
+        call_category: (isCsRep(repName) || isCsRep(repEmail))
+          ? 'cs'
+          : deriveCallCategory(deriveDerivedCallType(title)),
         ...noShowFlags,
       },
       { onConflict: 'gong_call_id' }

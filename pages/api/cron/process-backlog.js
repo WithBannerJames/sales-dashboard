@@ -64,7 +64,8 @@ export default async function handler(req, res) {
   }
 
   // Governance: never analyze excluded (CS / non-sales) reps' calls.
-  backlog = backlog.filter(c => !isExcludedRep(c.rep_name))
+  // CS reps' calls are analysed too since 2026-09-18 — they hold the customer knowledge. The
+  // 'cs' tag applied at analysis, not a filter here, is what keeps them out of sales metrics.
 
   if (!backlog?.length) {
     const { count } = await db

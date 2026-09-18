@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createGongHeaders } from '../../../lib/apiUtils'
 import { deriveDerivedCallType, deriveCallCategory, isInternalCall } from '../../../lib/callCategory'
+import { isCsRep } from '../../../lib/repConfig'
 
 const GONG_API_BASE = 'https://api.gong.io'
 const BATCH_SIZE = 100
@@ -239,7 +240,10 @@ export default async function handler(req, res) {
     // no-shows are tagged up front instead of waiting on analysis.
     const internal = isInternalCall(parties)
     const derivedType = internal ? 'internal' : deriveDerivedCallType(call.title)
-    const category = internal ? 'internal' : deriveCallCategory(derivedType)
+    // A CS rep's call is a CS call regardless of title (see intel-analyze).
+    const category = internal
+      ? 'internal'
+      : (isCsRep(user?.name) || isCsRep(user?.email)) ? 'cs' : deriveCallCategory(derivedType)
     const isNoShow = (call.duration || 0) > 0 && (call.duration || 0) < 120
 
     const row = {
