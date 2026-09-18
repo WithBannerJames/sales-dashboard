@@ -11,7 +11,7 @@
 
 import { createGongHeaders } from '../../../lib/apiUtils';
 import { getSupabase } from '../../../lib/supabase';
-import { isExcludedRep } from '../../../lib/repConfig';
+import { isCsRep } from '../../../lib/repConfig';
 
 const GONG_API_BASE = 'https://api.gong.io';
 
@@ -193,10 +193,11 @@ export default async function handler(req, res) {
     .filter(call => !doneIds.has(call.id))
     .filter(call => {
       const user = userMap[call.primaryUserId];
-      // CS reps are imported and analysed too (2026-09-18) — their calls carry the customer
-      // knowledge. They are tagged call_category='cs' at analysis, which is what keeps them out
-      // of sales metrics.
-      return true;
+      // CS calls ARE imported (above) — their transcripts are what the deal reads use. But we
+      // do not pay for a per-call analysis of them: /api/simple/{gaps,capex} run their own pass
+      // over transcript_text, so the knowledge is already available without this. Paid analysis
+      // stays on sales calls.
+      return !isCsRep(user?.name) && !isCsRep(user?.email);
     })
     .slice(0, analyzeCap);
 
