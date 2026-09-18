@@ -29,7 +29,10 @@ export default async function handler(req, res) {
 
   const priorityAccountIds = (priorityAccounts || []).map(a => a.id)
 
-  const BATCH = 30
+  // Throttled 30 -> 5 (2026-09-18, James: "space it out, let's not burn credits"). Runs every
+  // 15 min, so this is ~480 calls/day rather than ~2,900. Slot 1 below still fills from
+  // active-stage accounts first, so the spend lands on live deals before old history.
+  const BATCH = 5
   let backlog = []
 
   // Slot 1: up to BATCH calls from active-stage accounts (most recent first)

@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   const isQuick = req.query.quick === '1';
   // 150 days covers the 90-day nightly window plus buffer for backfill gaps
   const lookbackHours = isQuick ? 8 : 150 * 24;
-  const analyzeCap = isQuick ? 10 : 150;
+  const analyzeCap = isQuick ? 10 : 20;
 
   const toDate = new Date();
   const fromDate = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);

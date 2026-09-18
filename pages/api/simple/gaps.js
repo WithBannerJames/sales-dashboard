@@ -119,7 +119,10 @@ export default async function handler(req, res) {
       .select('gong_call_id, title, rep_name, call_date, analysis, transcript_text')
       .in('account_id', familyIds)
       .eq('ignored', false)
-      .not('analyzed_at', 'is', null)
+      // Deliberately NOT requiring analyzed_at. This read does its own pass over
+      // transcript_text, so a call only needs a stored transcript to count. That makes CS
+      // conversations usable here without spending a Haiku analysis on each one — the
+      // per-call analysis is for the conversation list, not for this.
       .or('call_category.is.null,call_category.neq.internal')
       .order('call_date', { ascending: false })
       .limit(40);
